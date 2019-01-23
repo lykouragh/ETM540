@@ -1,0 +1,207 @@
+---
+title: "ETM 540 Week 2 Homework"
+author: "Jordan Hilton"
+date: "January 15, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library (pander, quietly = TRUE) 
+library (magrittr, quietly = TRUE) 
+library (dplyr, quietly = TRUE) 
+library (ROI, quietly = TRUE) 
+library (ROI.plugin.glpk, quietly = TRUE) 
+library (ompr, quietly = TRUE)
+library (ompr.roi, quietly = TRUE)
+```
+
+## Problem 3.1
+
+Ok, we're making an explicit model with 16 choice variables, one for each combination of source and destination. Note that this is a supply constrained model since we have more capacity than supply, therefore we'll want to ship our entire supply, and we'll be optimizing for the minimum cost to ship that entire supply. Here is our table for easy reference:
+
+| Node        | PDX   |   SEA |  MSP  | ATL   | **Supply** | 
+|------------:|:-----:|:-----:|:-----:|:-----:|:----------:|
+|  Chicago    |  20   |  21   |   8   |  12   |   **500**  |
+|  Beaverton  |   6   |   7   |   18  | 24    |   **500**  |
+|  Eugene     |   8   |   10  |  22   | 28    |   **500**  |
+|  Dallas     |   16  |   26  |  15   |  5    |   **600**  |
+|**Capacity** |**700**|**500**|**500**|**600**|            |
+
+### a (Formulation)
+
+Our 16 choice variables will be named in the format recommended in the book, so that XCP refers to the path from Chicago to Portland. How fortunate that all of these locations start with different letters!
+
+* XCP = Amount to ship from Chicago to PDX
+* XCS = Amount to ship from Chicago to SEA
+* XCM = Amount to ship from Chicago to MSP
+* XCA = Amount to ship from Chicago to ATL
+* XBP = Amount to ship from Beaverton to PDX
+* XBS = Amount to ship from Beaverton to SEA
+* XBM = Amount to ship from Beaverton to MSP
+* XBA = Amount to ship from Beaverton to ATL
+* XEP = Amount to ship from Eugene to PDX
+* XES = Amount to ship from Eugene to SEA
+* XEM = Amount to ship from Eugene to MSP
+* XEA = Amount to ship from Eugene to ATL
+* XDP = Amount to ship from Dallas to PDX
+* XDS = Amount to ship from Dallas to SEA
+* XDM = Amount to ship from Dallas to MSP
+* XDA = Amount to ship from Dallas to ATL
+
+
+
+Now let's formulate the LP:
+
+$$
+\begin{aligned}
+\text{Minimize  } & 20*XCP+21*XCS+8*XCM+12*XCA+6*XBP+7*XBS+18*XBM+24*XBA+ \\
+                        & 8*XEP+10*XES+22*XEM+28*XEA+16*XDP+26*XDS+15*XDM+5*XDA \\ 
+                        \text{subject to } &  XCP+XCS+XCM+XCA=500 \\
+                        &  XBP+XBS+XBM+XBA=500 \\
+                        &  XEP+XES+XEM+XEA=500 \\
+                         &  XDP+XDS+XDM+XDA=600 \\
+                        &  XCP+XBP+XEP+XDP \leq 700\\
+                         &  XCS+XBS+XES+XDS \leq 500 \\
+                          &  XCM+XBM+XEM+XDM \leq 500 \\
+                           &  XCA+XBA+XEA+XDA \leq 600 \\
+                       & XCP, XCS, XCM, XCA, XBS, XBM, XBA, XEP, XES, XEM, XEA, \\
+                       & XDP, XDS, XDM, XDA \geq 0 
+\end{aligned}
+$$
+
+ 
+ 
+### b (Implementation)
+
+Let's implement the model we've described above as in HW1:
+
+```{r transmodel1}
+transmodel <- MIPModel() %>%
+  add_variable(XCP, type = "continuous", lb = 0) %>% #decision variables are amount to ship from each source 
+  add_variable(XCS, type = "continuous",lb = 0) %>%  #to each destination
+  add_variable(XCM, type = "continuous", lb = 0) %>%
+  add_variable(XCA, type = "continuous", lb = 0) %>%
+  add_variable(XBP, type = "continuous", lb = 0) %>%
+  add_variable(XBS, type = "continuous",lb = 0) %>%
+  add_variable(XBM, type = "continuous", lb = 0) %>%
+  add_variable(XBA, type = "continuous", lb = 0) %>%
+  add_variable(XEP, type = "continuous", lb = 0) %>%
+  add_variable(XES, type = "continuous",lb = 0) %>%
+  add_variable(XEM, type = "continuous", lb = 0) %>%
+  add_variable(XEA, type = "continuous", lb = 0) %>%
+  add_variable(XDP, type = "continuous", lb = 0) %>%
+  add_variable(XDS, type = "continuous",lb = 0) %>%
+  add_variable(XDM, type = "continuous", lb = 0) %>%
+  add_variable(XDA, type = "continuous", lb = 0) %>%
+  
+  set_objective(20*XCP+21*XCS+8*XCM+12*XCA+6*XBP+7*XBS+18*XBM+24*XBA+
+                  8*XEP+10*XES+22*XEM+28*XEA+16*XDP+26*XDS+15*XDM+5*XDA, "min") %>% #minimize cost
+  
+  add_constraint(XCP+XCS+XCM+XCA == 500) %>% #ship Chicago supply
+  add_constraint(XBP+XBS+XBM+XBA == 500) %>% #ship Beaverton supply
+  add_constraint(XEP+XES+XEM+XEA == 500) %>% #ship Eugene supply
+  add_constraint(XDP+XDS+XDM+XDA == 600) %>% #ship Dallas supply
+  add_constraint(XCP+XBP+XEP+XDP <= 700) %>% #Portland capacity
+  add_constraint(XCS+XBS+XES+XDS <= 500) %>% #Seattle capacity
+  add_constraint(XCM+XBM+XEM+XDM <= 500) %>% #Beaverton capacity
+  add_constraint(XCA+XBA+XEA+XDA <= 600) %>% #Dallas capacity
+ 
+  
+  solve_model(with_ROI(solver = "glpk"))
+
+```
+
+### c (Solution and discussion)
+
+Let's examine the outputs from solving our transportation model, starting with the solver status:
+
+```{r transmodelstatus}
+print(solver_status(transmodel))
+```
+
+Looks like the solver has reached an optimum solution. How much stuff should we ship?
+
+```{r transmodelsolutions}
+pander(transmodel$solution)
+```
+
+This looks like a valid solution. Each warehouse has shipped its full supply (for example, Beaverton has a supply of 500 and has shipped 200 to Portland and 300 to Seattle), and no distributor has received more than its capacity (for example Portland is full having received 500 goods from Eugene and 200 from Beaverton). How much did it cost to ship all these?
+
+```{r transmodelobjective}
+print(objective_value(transmodel))
+```
+
+Just as a sanity check we were shipping 2100 total goods at a cost of around 7 each, so this looks like a reasonable number.
+
+## Problem 3.2
+
+Let's do this again, the easy way.
+
+### a (Formulation)
+
+We have $NW$ warehouses and $ND$ distributors. The i-th warehouse has $S_i$ supply and the j-th distributor has $D_j$ capacity. For each path between a warehouse and a distributor, we have $C_{i, j}$, the cost of shipping one unit of product along that path. We want to ship our entire supply while minimizing total cost. We'll write the model for the supply-constrained case. We are deciding $x_{i,j}$, how many units of product to ship along each path. The formal models is as follows:
+
+$$
+\begin{split}
+\begin{aligned}
+\text{Minimize the total shipment cost} \; &  \sum_{i=1}^{NW} \sum_{j=1}^{ND} C_{i,j} x_i \\
+\text{subject to shipping all goods} \; & \sum_{j=1}^{ND} x_{i,j} = S_i \; \forall \; i \\
+ \text{and not overflowing distributors} \;  & \sum_{i=1}^{NW} x_{i,j} \leq D_j  \; \forall \; j\\
+  \text{and not shipping negative stuff} \; & x_{i,j} \geq 0 \; \forall \; i,j
+\end{aligned}
+\end{split}
+$$
+
+
+Isn't that nicer?
+
+### b (Implementation)
+
+Let's write that in code:
+
+```{r generalizedtransmodel}
+
+NW<- 4
+ND<- 4
+PathNames<-list(c("XCP", "XCS", "XCM", "XCA", "XBS", "XBM", "XBA", "XEP", "XES", "XEM", "XEA", "XDP", "XDS", "XDM", "XDA"))
+
+WarehouseNames <- list(c("Chicago", "Beaverton", "Eugene", "Dallas"))
+                 
+
+DistributorNames<- list(c("PDX", "SEA", "MSP", "ATL"))
+                
+
+PathCosts <- matrix(c(20, 21, 8, 12, 6, 7, 18, 24, 8, 10, 22, 28, 16, 26, 15, 5), 
+              ncol=ND,byrow=TRUE,dimnames=c(WarehouseNames,DistributorNames))
+
+Supply<- matrix(c(500, 500, 500, 600), 
+              ncol=NW,dimnames=c("Supply",WarehouseNames))
+
+Demand <- matrix(c(700, 500, 500, 600), 
+              ncol=ND,dimnames=c("Demand",DistributorNames))
+
+transmodel2 <- MIPModel() %>%
+  add_variable (x[i, j], i=1:NW,j=1:ND, type="continuous", lb=0) %>%
+  set_objective (sum_expr(sum_expr(PathCosts[i, j] * x[i, j] , i=1:NW), j=1:ND ), "min") %>% #minimize costs, * here is scalar mult.
+  add_constraint (sum_expr(x[i, j], j=1:ND) == Supply[i],  i=1:NW) %>%  # NW constraints on supply
+  add_constraint (sum_expr(x[i, j], i=1:NW) <= Demand[j],  j=1:ND) %>%  # ND constraints on demand
+  solve_model(with_ROI(solver = "glpk"))
+  
+transmodel2
+```
+
+### c (Solution and discussion)
+We have obtained an optimal solution again, and it looks like total shipping costs remain the same.
+
+Let's check to see if we get the same results for our decision variables x:
+
+```{r solutiondisplay2}
+solution2display<-matrix(transmodel2$solution, ncol=ND, dimnames=(c(WarehouseNames,DistributorNames)))## nice table
+solution2display<-rbind(solution2display, Demand) ##add demand for checking
+solution2display<-cbind(solution2display, c(Supply, "-")) ##add supply for checking
+dimnames(solution2display)[[2]][5]<-"Supply" #fixing a name
+pander(solution2display)
+
+```
+This does look like the same solution as above. Note that we have shipped the full supply from each warehouse adn that each distributor is not exceeding its capacity. Looks like Portland filled all the way up and Seattle didn't because it's cheaper to ship from Beaverton to Portland, but Beaverton didn't ship everything to Portland since it's even cheaper to ship from Eugene to Portland.
