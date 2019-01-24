@@ -1,0 +1,309 @@
+---
+title: "540HW3"
+author: "Jordan Hilton"
+date: "January 22, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library (pander, quietly = TRUE) 
+library (magrittr, quietly = TRUE) 
+library (dplyr, quietly = TRUE) 
+library (ROI, quietly = TRUE) 
+library (ROI.plugin.glpk, quietly = TRUE) 
+library (ompr, quietly = TRUE)
+library (ompr.roi, quietly = TRUE)
+```
+
+## Problem 4.1
+
+We're going to start by formulating and building a model; here's the model's source data for reference.
+
+| Characteristic | Chairs | Desks | Frames | Tables | Available  | 
+|---------------:|:-----:|:-----:|:------:|:---------:|:----------:|
+|  Profit        |  20  |  14  |    3  |  16      |            |
+|  Fabrication   |   6   |   2   |     1  |    4      |   1440     |
+|  Assembly      |   8   |   6   |     1  |    8      |   1440     |
+|  Machining     |   6   |   4   |     1  |   25      |   2000     |
+|  Painting      |   7   |  10   |     2  |   12      |   1000     |
+|  Wood          |  40   |  25   |     5  |   16      |   9600     |
+
+### a (Formulation)
+
+Let's start by defining our choice variables:
+
+* Chairs = # of Chairs to Make
+* Desks = # of Desks to Make
+* Frames = # of Frames to Make
+* Tables = # of Tables to Make
+
+
+Now let's formulate the LP:
+
+$$
+ \begin{split}
+ \begin{aligned}
+    \text{Maximize  }   & 20*Chairs+14*Desks+3*Frames+16*Tables \\
+    \text{subject to } & 6*Chairs+2*Desks+Frames+4*Tables \leq 1440 \\
+                       & 8*Chairs+6*Desks+Frames+8*Tables \leq 1440 \\
+                       & 6*Chairs+4*Desks+Frames+25*Tables \leq 2000 \\
+                      & 7*Chairs+10*Desks+2*Frames+12*Tables \leq 1000 \\
+                       & 40*Chairs+25*Desks+5*Frames+16*Tables \leq 9600 \\
+                       & Chairs, Desks, Frames, Tables \geq 0 \\   
+  \end{aligned} 
+  \end{split} 
+$$
+
+### b (Implementation)
+
+Let's implement our model in OMPR:
+
+```{r createmodel}
+model <- MIPModel() %>%
+  add_variable(Chairs, type = "continuous", lb = 0) %>%
+  add_variable(Desks, type = "continuous",lb = 0) %>%
+  add_variable(Frames, type = "continuous", lb = 0) %>%
+  add_variable(Tables, type = "continuous", lb = 0) %>%
+  
+  set_objective(20*Chairs + 14*Desks + 3*Frames + 16*Tables, "max") %>%
+  
+  add_constraint(6*Chairs+2*Desks+Frames+4*Tables <= 1440) %>% #fabrication
+  add_constraint(8*Chairs+6*Desks+Frames+8*Tables <= 1440) %>% #assembly
+  add_constraint(6*Chairs+4*Desks+Frames+25*Tables <= 2000) %>% #machining
+  add_constraint(7*Chairs+10*Desks+2*Frames+12*Tables <= 1000) %>% #painting
+  add_constraint(40*Chairs+25*Desks+5*Frames+16*Tables <= 9600) #wood
+ 
+```
+
+### c and d (Solution and interpretration)
+
+Now let's examine the values for our decision variables, the optimal objective value, and the row and column duals.
+
+```{r firstsolution}
+solution<-solve_model(model, with_ROI(solver = "glpk"))
+solution$status
+solution$solution
+solution$objective_value
+```
+
+So our optimal solution is to make only chairs, of which we have enough materials to make 142.8571, and the total profit we will make is \$2,857.14.
+
+### e Reduced Costs and Shadow Prices
+
+Let's take a look at our reduced costs and shadow prices:
+```{r duals}
+rowduals<-data.frame(ShadowPrices=solution$solution_row_duals(), row.names=(c("Fabrication", "Assembly", "Machining", "Painting", "Wood")))
+pander(rowduals, caption="Shadow Prices")
+columnduals<-data.frame(ReducedCosts=solution$solution_column_duals())
+pander(columnduals, caption="Reduced Costs")
+
+```
+
+We see that our only constrained resource is paint, so we would be unaffected by a small reduction in other resources and we would achieve additional profit with a small increase in our supply of paint. We also see that we'd take a small opportunity cost loss in profit by making tables, frames, or desks, with tables being the worst option, losing 18 dollars in profit for every table we chose to make.
+
+### f Changing the Objective Function
+
+Since we know that our current plan is to only make chairs, let's increase the profitability of frames by slightly more than the current reduced costs of frames to get our model to decide to make some frames. I'll change the profit coefficient for frames from 3 to 6, so that the formal objective function would read:
+
+$$
+\text{Maximize  }    20*Chairs+14*Desks+6*Frames+16*Tables 
+$$
+and our R model looks like:
+
+```{r modelf}
+modelf <- MIPModel() %>%
+  add_variable(Chairs, type = "continuous", lb = 0) %>%
+  add_variable(Desks, type = "continuous",lb = 0) %>%
+  add_variable(Frames, type = "continuous", lb = 0) %>%
+  add_variable(Tables, type = "continuous", lb = 0) %>%
+  
+  set_objective(20*Chairs + 14*Desks + 6*Frames + 16*Tables, "max") %>%
+  
+  add_constraint(6*Chairs+2*Desks+Frames+4*Tables <= 1440) %>% #fabrication
+  add_constraint(8*Chairs+6*Desks+Frames+8*Tables <= 1440) %>% #assembly
+  add_constraint(6*Chairs+4*Desks+Frames+25*Tables <= 2000) %>% #machining
+  add_constraint(7*Chairs+10*Desks+2*Frames+12*Tables <= 1000) %>% #painting
+  add_constraint(40*Chairs+25*Desks+5*Frames+16*Tables <= 9600) #wood
+ 
+```
+
+Let's look at the new solution:
+
+```{r solutionf}
+solutionf<-solve_model(modelf, with_ROI(solver = "glpk"))
+solutionf$status
+solutionf$solution
+solutionf$objective_value
+```
+
+You can see that now we're supposed to make some frames, and that our overall profit has increased from \$2,857 to \$3,000.
+
+### g Changing Resource Usage
+
+Let's try removing our paint usage for tables, since that is our constrained resource- we can sell unpainted tables to use up our spare resources of wood, etc. The paint constraint would change to:
+
+$$
+7*Chairs+10*Desks+2*Frames \leq 1000
+$$
+and our R model looks like this (remember that we're changing the profitability of frames back to 3):
+
+```{r modelg}
+modelg <- MIPModel() %>%
+  add_variable(Chairs, type = "continuous", lb = 0) %>%
+  add_variable(Desks, type = "continuous",lb = 0) %>%
+  add_variable(Frames, type = "continuous", lb = 0) %>%
+  add_variable(Tables, type = "continuous", lb = 0) %>%
+  
+  set_objective(20*Chairs + 14*Desks + 3*Frames + 16*Tables, "max") %>%
+  
+  add_constraint(6*Chairs+2*Desks+Frames+4*Tables <= 1440) %>% #fabrication
+  add_constraint(8*Chairs+6*Desks+Frames+8*Tables <= 1440) %>% #assembly
+  add_constraint(6*Chairs+4*Desks+Frames+25*Tables <= 2000) %>% #machining
+  add_constraint(7*Chairs+10*Desks+2*Frames <= 1000) %>% #painting
+  add_constraint(40*Chairs+25*Desks+5*Frames+16*Tables <= 9600) #wood
+ 
+```
+
+Let's look at the new solution:
+
+```{r solutiong}
+solutiong<-solve_model(modelg, with_ROI(solver = "glpk"))
+solutiong$status
+solutiong$solution
+solutiong$objective_value
+```
+
+Great, now we get most of our profit from our painted chairs but some additional profit from our unpainted tables, which are using up some of our spare resources. 
+
+### h Changing Available Resources
+
+This time let's triple our supply of paint, since that's the constrained resource. The relevant line of the formal model would change as follows:
+
+$$
+7*Chairs+10*Desks+2*Frames+12*Tables \leq 3000
+$$
+and our R model looks like this:
+
+```{r modelh}
+modelh <- MIPModel() %>%
+  add_variable(Chairs, type = "continuous", lb = 0) %>%
+  add_variable(Desks, type = "continuous",lb = 0) %>%
+  add_variable(Frames, type = "continuous", lb = 0) %>%
+  add_variable(Tables, type = "continuous", lb = 0) %>%
+  
+  set_objective(20*Chairs + 14*Desks + 3*Frames + 16*Tables, "max") %>%
+  
+  add_constraint(6*Chairs+2*Desks+Frames+4*Tables <= 1440) %>% #fabrication
+  add_constraint(8*Chairs+6*Desks+Frames+8*Tables <= 1440) %>% #assembly
+  add_constraint(6*Chairs+4*Desks+Frames+25*Tables <= 2000) %>% #machining
+  add_constraint(7*Chairs+10*Desks+2*Frames+12*Tables <= 3000) %>% #painting
+  add_constraint(40*Chairs+25*Desks+5*Frames+16*Tables <= 9600) #wood
+ 
+```
+
+Let's look at the new solution:
+
+```{r solutionh}
+solutionh<-solve_model(modelh, with_ROI(solver = "glpk"))
+solutionh$status
+solutionh$solution
+solutionh$objective_value
+```
+
+This change causes us to create frames instead of chairs, and significantly increases our overall profit. Note that when we run the rowduals another resource should be constrained now:
+
+```{r hduals}
+rowdualsh<-data.frame(ShadowPrices=solutionh$solution_row_duals(), row.names=(c("Fabrication", "Assembly", "Machining", "Painting", "Wood")))
+pander(rowdualsh, caption="New Shadow Prices")
+```
+
+As expected, now we have shadow prices for Fabrication and Assembly but not Painting.
+
+### i Summary Table
+
+Let's create a summary table of all of our solution:
+
+```{r solutionsummary}
+objectivevalues<-c(solution$objective_value, solutionf$objective_value, solutiong$objective_value, solutionh$objective_value)
+
+solutiontable<- solution$solution %>%
+  rbind(solutionf$solution) %>%
+  rbind(solutiong$solution) %>%
+  rbind(solutionh$solution) %>%
+  cbind(objectivevalues) 
+
+rownames(solutiontable)<-c("Base Solution", "Part F", "Part G", "Part H")
+
+pander(solutiontable)
+```
+
+My favorite is solution G, where we got to use our unconstrained resources. Of course the profit is higher in some models just because I gave us magically more resources or lower consumption to work with. Let's play the same game with row duals just for fun:
+
+```{r rowdualsummary}
+objectivevalues<-c(solution$objective_value, solutionf$objective_value, solutiong$objective_value, solutionh$objective_value)
+
+rowdualsf<-data.frame(ShadowPrices=solutionf$solution_row_duals(), row.names=(c("Fabrication", "Assembly", "Machining", "Painting", "Wood")))
+
+rowdualsg<-data.frame(ShadowPrices=solutiong$solution_row_duals(), row.names=(c("Fabrication", "Assembly", "Machining", "Painting", "Wood")))
+
+rowdualstable<- rowduals %>%
+  cbind(rowdualsf) %>%
+  cbind(rowdualsg) %>%
+  cbind(rowdualsh) 
+
+colnames(rowdualstable)<-c("Base Solution", "Part F", "Part G", "Part H")
+
+pander(rowdualstable, caption="Comparing Row Duals")
+```
+
+Here we can see that in my favorite solution G, our new constraining resource for our unpainted tables is assembly time- so we could play some more by deciding to sell unassembled desks, etc.
+
+## Problem 4.2
+
+Just very quickly, I'm going to run our generalized transport model from HW2, look at the row and column duals, and answer the question:
+
+```{r generalizedtransmodel}
+
+NW<- 4
+ND<- 4
+PathNames<-list(c("XCP", "XCS", "XCM", "XCA", "XBS", "XBM", "XBA", "XEP", "XES", "XEM", "XEA", "XDP", "XDS", "XDM", "XDA"))
+
+WarehouseNames <- list(c("Chicago", "Beaverton", "Eugene", "Dallas"))
+                 
+
+DistributorNames<- list(c("PDX", "SEA", "MSP", "ATL"))
+                
+
+PathCosts <- matrix(c(20, 21, 8, 12, 6, 7, 18, 24, 8, 10, 22, 28, 16, 26, 15, 5), 
+              ncol=ND,byrow=TRUE,dimnames=c(WarehouseNames,DistributorNames))
+
+Supply<- matrix(c(500, 500, 500, 600), 
+              ncol=NW,dimnames=c("Supply",WarehouseNames))
+
+Demand <- matrix(c(700, 500, 500, 600), 
+              ncol=ND,dimnames=c("Demand",DistributorNames))
+
+transmodel2 <- MIPModel() %>%
+  add_variable (x[i, j], i=1:NW,j=1:ND, type="continuous", lb=0) %>%
+  set_objective (sum_expr(sum_expr(PathCosts[i, j] * x[i, j] , i=1:NW), j=1:ND ), "min") %>% #minimize costs, * here is scalar mult.
+  add_constraint (sum_expr(x[i, j], j=1:ND) == Supply[i],  i=1:NW) %>%  # NW constraints on supply
+  add_constraint (sum_expr(x[i, j], i=1:NW) <= Demand[j],  j=1:ND) %>%  # ND constraints on demand
+  solve_model(with_ROI(solver = "glpk"))
+```
+
+We have the solution to the model, let's make tables of the row and column duals:
+
+```{r transportcolduals}
+transcolduals<-matrix(transmodel2$solution_column_duals(), ncol=ND, dimnames=(c(WarehouseNames,DistributorNames)))
+pander(transcolduals, caption="Increased transportation prices")
+```
+
+These are the 16 column duals corresponding to our 16 decision variables. We should interpret the 26 for the Eugene-MSP path to mean that it would cost us an addition 26 dollars if we were forced to transport one unit from Eugene to MSP.
+
+```{r transportrowduals}
+transrowtable<-data.frame(RowDuals=transmodel2$solution_row_duals(), row.names=c("Chicago", "Beaverton", "Eugene", "Dallas","PDX", "SEA", "MSP", "ATL"))
+pander(transrowtable)
+```
+
+Here are the row duals, which should each correspond to a constraint, and to which I've attached the names for the appropriate constraints. Remember that we're trying to minimize cost here, so smaller row duals are better. I think the story is that we should allocate an additional unit of warehouse supply to Beaverton, since we'd be able to ship it somewhere for 7 dollars; and if we had an additional unit of distributor capacity, we should allocate it to MSP, since we'll be able to ship there for 13 dollars cheaper than wherever we're shipping our last unit currently.
