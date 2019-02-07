@@ -1,0 +1,42 @@
+---
+title: "SImpsonExercise"
+author: "Jordan Hilton"
+date: "January 29, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library (pander, quietly = TRUE) 
+library (magrittr, quietly = TRUE) 
+library (dplyr, quietly = TRUE) 
+library (ROI, quietly = TRUE) 
+library (ROI.plugin.glpk, quietly = TRUE) 
+library (ompr, quietly = TRUE)
+library (ompr.roi, quietly = TRUE)
+```
+
+```{r simpson1}
+
+S3<-c(88, 34, 2, 81)
+
+
+simpsonmodel1 <- MIPModel() %>%
+  add_variable (x[i], i=1:4, type="continuous", lb=0) %>%
+  set_objective (sum_expr(S3[i] * x[i] , i=1:4) , "max") %>% #
+  add_constraint (sum_expr(S3[i] * x[i], i=1:4) <= 1) %>%  # 
+  solve_model(with_ROI(solver = "glpk"))
+```
+
+```{r simpson2}
+
+S<-matrix(c(77, 75, 80, 39, 10, 4, 60, 44, 88, 34, 2, 81, 13, 33, 44, 69, 6, 10, 27, 88, 35, 55, 33, 77, 75, 61, 50, 33, 3, 2, 90, 8), ncol=4, byrow=TRUE)
+
+k<-3
+
+simpsonmodel2 <- MIPModel() %>%
+  add_variable (x[i], i=1:4, type="continuous", lb=0) %>%
+  set_objective (sum_expr(S[k,i] * x[i] , i=1:4) , "max") %>% #
+  add_constraint (sum_expr(S[j, i] * x[i], i=1:4) <= 1, j=1:8) %>%  # 
+  solve_model(with_ROI(solver = "glpk"))
+```
